@@ -5,7 +5,7 @@ const cors = require('cors');
 const passport = require('passport');
 const FacebookStrategy = require('passport-facebook').Strategy;
 const session = require('express-session');
-const axios = require('axios'); // <-- Importamos o axios
+const axios = require('axios');
 
 // 2. Configurar o dotenv
 dotenv.config();
@@ -19,10 +19,12 @@ passport.deserializeUser((obj, done) => {
   done(null, obj);
 });
 
+// ** CORREÇÃO 1: URL de Callback Completa e Segura **
+// Forçamos o uso do endereço HTTPS completo para garantir que não haja confusão.
 passport.use(new FacebookStrategy({
     clientID: process.env.META_APP_ID,
     clientSecret: process.env.META_APP_SECRET,
-    callbackURL: "/auth/facebook/callback", // A Render preenche o domínio automaticamente
+    callbackURL: "https://automatizador-backend.onrender.com/auth/facebook/callback",
     scope: ['email', 'read_insights', 'ads_read', 'business_management']
   },
   (accessToken, refreshToken, profile, done) => {
@@ -36,16 +38,26 @@ passport.use(new FacebookStrategy({
 // --- FIM DA CONFIGURAÇÃO DO PASSPORT ---
 
 const app = express();
-const PORT = process.env.PORT || 10000; // A Render usa a porta 10000
+const PORT = process.env.PORT || 10000;
+
+// Habilitar confiança no proxy para o Express funcionar corretamente com HTTPS na Render
+app.set('trust proxy', 1);
 
 // 5. Configurar os middlewares
 app.use(cors());
 app.use(express.json());
+
+// ** CORREÇÃO 2: Configuração de Cookie de Sessão Segura **
+// Garantimos que o cookie de sessão só seja enviado através de HTTPS.
 app.use(session({
     secret: 'uma frase secreta muito forte para relatorios',
     resave: false,
     saveUninitialized: false,
-    proxy: true // Necessário para funcionar atrás do proxy da Render
+    proxy: true, // Necessário para funcionar atrás do proxy da Render
+    cookie: {
+        secure: true, // Garante que o cookie só seja enviado por HTTPS
+        sameSite: 'none' // Necessário para iframes/redirecionamentos de terceiros
+    }
 }));
 app.use(passport.initialize());
 app.use(passport.session());
@@ -57,7 +69,6 @@ function ensureAuthenticated(req, res, next) {
     }
     res.status(401).json({ message: 'Não autorizado. Por favor, faça o login.' });
 }
-
 
 // 6. Criar as rotas
 app.get('/', (req, res) => {
@@ -79,15 +90,9 @@ app.get('/', (req, res) => {
   }
 });
 
-// Rota para a política de privacidade
-app.get('/privacy', (req, res) => {
-    res.send('<h1>Política de Privacidade</h1><p>Placeholder para a política de privacidade.</p>');
-});
-
-// Rota para a exclusão de dados
-app.get('/data-deletion', (req, res) => {
-    res.send('<h1>Instruções de Exclusão de Dados</h1><p>Placeholder para as instruções de exclusão.</p>');
-});
+// Rotas de políticas
+app.get('/privacy', (req, res) => { res.send('<h1>Política de Privacidade</h1><p>Placeholder.</p>'); });
+app.get('/data-deletion', (req, res) => { res.send('<h1>Instruções de Exclusão de Dados</h1><p>Placeholder.</p>'); });
 
 // Rotas de Autenticação
 app.get('/auth/facebook', passport.authenticate('facebook'));
@@ -100,12 +105,11 @@ app.get('/auth/facebook/callback',
 app.get('/auth/error', (req, res) => { res.send('<h1>Erro na autenticação.</h1><a href="/">Tentar novamente</a>'); });
 app.get('/auth/logout', (req, res) => { req.logout(() => res.redirect('/')); });
 
-// Rota para ver os dados do perfil
+// Rotas da API
 app.get('/api/profile', ensureAuthenticated, (req, res) => {
     res.json(req.user);
 });
 
-// --- NOVA ROTA PARA BUSCAR CONTAS DE ANÚNCIO ---
 app.get('/api/ad-accounts', ensureAuthenticated, async (req, res) => {
     const userAccessToken = req.user.accessToken;
     const apiUrl = `https://graph.facebook.com/v20.0/me/adaccounts?fields=name,account_id,business_name&access_token=${userAccessToken}`;
@@ -114,11 +118,10 @@ app.get('/api/ad-accounts', ensureAuthenticated, async (req, res) => {
         const response = await axios.get(apiUrl);
         res.json(response.data);
     } catch (error) {
-        console.error("Erro ao buscar contas de anúncio:", error.response.data);
-        res.status(500).json({ message: "Erro ao buscar contas de anúncio", error: error.response.data });
+        console.error("Erro ao buscar contas de anúncio:", error.response ? error.response.data : error.message);
+        res.status(500).json({ message: "Erro ao buscar contas de anúncio", error: error.response ? error.response.data : error.message });
     }
 });
-
 
 // 7. Iniciar o servidor
 app.listen(PORT, () => {
