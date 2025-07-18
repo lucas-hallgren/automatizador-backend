@@ -25,7 +25,9 @@ passport.use(new FacebookStrategy({
     clientID: process.env.META_APP_ID,
     clientSecret: process.env.META_APP_SECRET,
     callbackURL: "https://automatizador-backend.onrender.com/auth/facebook/callback",
-    scope: ['email', 'read_insights', 'ads_read', 'business_management']
+    // ***** ALTERAÇÃO PARA DEBUG *****
+    // Temporariamente pedimos apenas a permissão de email para testar o fluxo de login.
+    scope: ['email']
   },
   (accessToken, refreshToken, profile, done) => {
     const userData = {
